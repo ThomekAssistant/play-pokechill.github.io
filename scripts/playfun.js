@@ -1,82 +1,107 @@
-// Play.fun SDK Integration - Debug version
+// Play.fun SDK Integration - Force load check
 (function() {
     'use strict';
     
-    var GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
+    console.log('[Play.fun] Script loaded at:', new Date().toISOString());
+    console.log('[Play.fun] Document readyState:', document.readyState);
     
-    function checkSDK() {
-        console.log('[Play.fun] Checking available globals...');
-        
-        // List all possible SDK names
-        var possibleNames = ['PlayFunSDK', 'PlayFun', 'playFun', 'Playdotfun', 'playdotfun', 'ogp', 'OGP'];
-        var found = [];
-        
-        possibleNames.forEach(function(name) {
-            if (typeof window[name] !== 'undefined') {
-                console.log('[Play.fun] FOUND:', name, '- type:', typeof window[name]);
-                found.push(name);
-            }
-        });
-        
-        // Also check for any global containing 'play' or 'fun'
-        console.log('[Play.fun] Scanning window for SDK...');
-        for (var key in window) {
-            if (key.toLowerCase().includes('play') || key.toLowerCase().includes('fun') || key.toLowerCase().includes('ogp')) {
-                if (typeof window[key] === 'function' || typeof window[key] === 'object') {
-                    console.log('[Play.fun] Potential SDK:', key, '- type:', typeof window[key]);
-                }
-            }
+    // Check if sdk.play.fun script element exists
+    var scripts = document.querySelectorAll('script');
+    var foundSdk = false;
+    scripts.forEach(function(s) {
+        if (s.src && s.src.includes('sdk.play.fun')) {
+            console.log('[Play.fun] SDK script element found:', s.src);
+            console.log('[Play.fun] Script loaded?', s.readyState || 'unknown');
+            foundSdk = true;
         }
-        
-        return found;
+    });
+    
+    if (!foundSdk) {
+        console.error('[Play.fun] SDK script element NOT FOUND in DOM!');
     }
     
-    function init() {
-        console.log('[Play.fun] === STARTING DEBUG ===');
+    // Wait longer and check multiple times
+    var attempts = 0;
+    var maxAttempts = 20;
+    
+    function checkAndInit() {
+        attempts++;
+        console.log('[Play.fun] Check attempt', attempts + '/' + maxAttempts);
         
-        var found = checkSDK();
+        // Try all possible variations
+        var checks = {
+            'PlayFunSDK': typeof window.PlayFunSDK,
+            'PlayFun': typeof window.PlayFun,
+            'playFun': typeof window.playFun,
+            'Playdotfun': typeof window.Playdotfun,
+            'playdotfun': typeof window.playdotfun,
+            'OGP': typeof window.OGP,
+            'ogp': typeof window.ogp
+        };
         
-        if (found.length === 0) {
-            console.log('[Play.fun] No SDK found yet, waiting...');
-            setTimeout(init, 2000);
-            return;
+        console.log('[Play.fun] Types found:', JSON.stringify(checks));
+        
+        // If any is not undefined, we found something
+        var found = null;
+        for (var key in checks) {
+            if (checks[key] !== 'undefined') {
+                console.log('[Play.fun] ✓ Found', key, ':', checks[key]);
+                found = { name: key, type: checks[key], obj: window[key] };
+                break;
+            }
         }
         
-        console.log('[Play.fun] SDK(s) found:', found);
-        
-        // Try to use the first available SDK
-        var sdkName = found[0];
-        var SDK = window[sdkName];
-        
+        if (found) {
+            console.log('[Play.fun] Attempting init with', found.name);
+            tryInit(found);
+        } else if (attempts < maxAttempts) {
+            console.log('[Play.fun] Nothing found, retrying in 2s...');
+            setTimeout(checkAndInit, 2000);
+        } else {
+            console.error('[Play.fun] SDK never loaded after', maxAttempts, 'attempts');
+            console.log('[Play.fun] All window keys containing play/fun:', 
+                Object.keys(window).filter(function(k) {
+                    return k.toLowerCase().includes('play') || k.toLowerCase().includes('fun');
+                }).slice(0, 20)
+            );
+        }
+    }
+    
+    function tryInit(sdkInfo) {
         try {
-            console.log('[Play.fun] Trying to initialize with:', sdkName);
+            var SDK = sdkInfo.obj;
+            var instance;
             
-            var sdk = new SDK({
-                gameId: GAME_ID,
-                ui: { usePointsWidget: true }
-            });
-            
-            if (sdk.init && typeof sdk.init === 'function') {
-                sdk.init().then(function() {
-                    console.log('[Play.fun] ✓ SUCCESS with', sdkName);
-                    startPoints(sdk);
-                }).catch(function(e) {
-                    console.error('[Play.fun] Init failed:', e);
+            if (sdkInfo.type === 'function') {
+                instance = new SDK({
+                    gameId: '7b292365-07da-45d3-805c-75c2ce5d117e',
+                    ui: { usePointsWidget: true }
                 });
             } else {
-                console.log('[Play.fun] SDK initialized (no init method needed)');
-                startPoints(sdk);
+                instance = SDK;
             }
             
+            console.log('[Play.fun] Instance created:', instance);
+            
+            if (instance && typeof instance.init === 'function') {
+                instance.init().then(function() {
+                    console.log('[Play.fun] ✓✓✓ SUCCESS! SDK initialized');
+                    startEarning(instance);
+                }).catch(function(e) {
+                    console.error('[Play.fun] Init promise rejected:', e);
+                });
+            } else {
+                console.log('[Play.fun] No init method, assuming auto-initialized');
+                startEarning(instance);
+            }
         } catch (e) {
-            console.error('[Play.fun] Error creating SDK:', e);
-            setTimeout(init, 2000);
+            console.error('[Play.fun] Init error:', e);
         }
     }
     
-    function startPoints(sdk) {
+    function startEarning(sdk) {
         var total = 0;
-        
+        console.log('[Play.fun] Starting 10s timer...');
         setInterval(function() {
             try {
                 if (sdk.addPoints) {
@@ -84,22 +109,14 @@
                     total += 10;
                     console.log('[Play.fun] +' + 10 + ' pts (Total: ' + total + ')');
                 }
-                if (sdk.savePoints) {
-                    sdk.savePoints();
-                }
+                if (sdk.savePoints) sdk.savePoints();
             } catch (e) {
-                console.error('[Play.fun] Points error:', e);
+                console.error('[Play.fun] Error:', e);
             }
         }, 10000);
     }
     
-    // Start after page loads
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(init, 500);
-        });
-    } else {
-        setTimeout(init, 500);
-    }
+    // Start checking
+    setTimeout(checkAndInit, 1000);
     
 })();
