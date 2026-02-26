@@ -1,83 +1,105 @@
-// Play.fun SDK Integration - Points every 10 seconds
+// Play.fun SDK Integration - Debug version
 (function() {
     'use strict';
     
     var GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
-    var sdk = null;
-    var pointsInterval = null;
-    var totalPoints = 0;
+    
+    function checkSDK() {
+        console.log('[Play.fun] Checking available globals...');
+        
+        // List all possible SDK names
+        var possibleNames = ['PlayFunSDK', 'PlayFun', 'playFun', 'Playdotfun', 'playdotfun', 'ogp', 'OGP'];
+        var found = [];
+        
+        possibleNames.forEach(function(name) {
+            if (typeof window[name] !== 'undefined') {
+                console.log('[Play.fun] FOUND:', name, '- type:', typeof window[name]);
+                found.push(name);
+            }
+        });
+        
+        // Also check for any global containing 'play' or 'fun'
+        console.log('[Play.fun] Scanning window for SDK...');
+        for (var key in window) {
+            if (key.toLowerCase().includes('play') || key.toLowerCase().includes('fun') || key.toLowerCase().includes('ogp')) {
+                if (typeof window[key] === 'function' || typeof window[key] === 'object') {
+                    console.log('[Play.fun] Potential SDK:', key, '- type:', typeof window[key]);
+                }
+            }
+        }
+        
+        return found;
+    }
     
     function init() {
-        console.log('[Play.fun] Starting initialization...');
+        console.log('[Play.fun] === STARTING DEBUG ===');
         
-        if (typeof window.PlayFunSDK === 'undefined') {
-            console.log('[Play.fun] SDK not loaded yet, retrying in 1s...');
-            setTimeout(init, 1000);
+        var found = checkSDK();
+        
+        if (found.length === 0) {
+            console.log('[Play.fun] No SDK found yet, waiting...');
+            setTimeout(init, 2000);
             return;
         }
         
+        console.log('[Play.fun] SDK(s) found:', found);
+        
+        // Try to use the first available SDK
+        var sdkName = found[0];
+        var SDK = window[sdkName];
+        
         try {
-            sdk = new window.PlayFunSDK({
+            console.log('[Play.fun] Trying to initialize with:', sdkName);
+            
+            var sdk = new SDK({
                 gameId: GAME_ID,
-                ui: {
-                    usePointsWidget: true,
-                    position: 'bottom-right'
+                ui: { usePointsWidget: true }
+            });
+            
+            if (sdk.init && typeof sdk.init === 'function') {
+                sdk.init().then(function() {
+                    console.log('[Play.fun] ✓ SUCCESS with', sdkName);
+                    startPoints(sdk);
+                }).catch(function(e) {
+                    console.error('[Play.fun] Init failed:', e);
+                });
+            } else {
+                console.log('[Play.fun] SDK initialized (no init method needed)');
+                startPoints(sdk);
+            }
+            
+        } catch (e) {
+            console.error('[Play.fun] Error creating SDK:', e);
+            setTimeout(init, 2000);
+        }
+    }
+    
+    function startPoints(sdk) {
+        var total = 0;
+        
+        setInterval(function() {
+            try {
+                if (sdk.addPoints) {
+                    sdk.addPoints(10);
+                    total += 10;
+                    console.log('[Play.fun] +' + 10 + ' pts (Total: ' + total + ')');
                 }
-            });
-            
-            sdk.init().then(function() {
-                console.log('[Play.fun] ✓ SDK initialized successfully!');
-                window.playFun = sdk;
-                startPointsTimer();
-            }).catch(function(err) {
-                console.error('[Play.fun] ✗ Init error:', err);
-            });
-            
-        } catch (e) {
-            console.error('[Play.fun] ✗ Failed to create SDK:', e);
-        }
+                if (sdk.savePoints) {
+                    sdk.savePoints();
+                }
+            } catch (e) {
+                console.error('[Play.fun] Points error:', e);
+            }
+        }, 10000);
     }
     
-    function startPointsTimer() {
-        console.log('[Play.fun] Starting 10-second points timer...');
-        
-        // Give points immediately on start
-        givePoints();
-        
-        // Then every 10 seconds
-        pointsInterval = setInterval(givePoints, 10000);
+    // Start after page loads
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(init, 500);
+        });
+    } else {
+        setTimeout(init, 500);
     }
-    
-    function givePoints() {
-        if (!sdk) {
-            console.log('[Play.fun] SDK not ready, skipping points');
-            return;
-        }
-        
-        try {
-            var points = 10; // Points to give every 10 seconds
-            sdk.addPoints(points);
-            sdk.savePoints();
-            
-            totalPoints += points;
-            var timestamp = new Date().toLocaleTimeString();
-            
-            console.log('[Play.fun] [' + timestamp + '] +' + points + ' points given (Total: ' + totalPoints + ')');
-            
-        } catch (e) {
-            console.error('[Play.fun] Error giving points:', e);
-        }
-    }
-    
-    // Stop timer function (for debugging)
-    window.stopPlayFunPoints = function() {
-        if (pointsInterval) {
-            clearInterval(pointsInterval);
-            console.log('[Play.fun] Points timer stopped. Total given: ' + totalPoints);
-        }
-    };
-    
-    // Start
-    setTimeout(init, 1000);
     
 })();
