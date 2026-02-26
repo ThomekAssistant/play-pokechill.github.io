@@ -7,6 +7,7 @@
     <title>Pokechill</title>
     <link rel="icon" type="image/x-icon" href="/img/icons/icon.png">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://sdk.play.fun"></script>
 
 
 
@@ -1567,7 +1568,12 @@ Game Guide
 
     <script src="scripts/HackTimer.js"></script>
     <script src="scripts/fuse.js"></script>
-    <script src="https://sdk.play.fun"></script>
+    <script>
+      const sdk = new OpenGameSDK({ ui: { usePointsWidget: true } });
+      sdk.init({ gameId: 'your-game-id' }).then(() => {
+        console.log('SDK ready');
+      });
+    </script>
 
 
     <script src="scripts/moveDictionary.js"></script>
@@ -1599,6 +1605,7 @@ Game Guide
     <script src="scripts/save.js"></script>
 </body>
 </html>
+
 
 
 
