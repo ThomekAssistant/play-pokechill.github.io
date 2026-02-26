@@ -5,7 +5,7 @@
     'use strict';
     
     // Configuration
-    const GAME_ID = '32b55ac9-64d3-4534-9457-d7e7bfa16f36';
+    const GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
     let playFun = null;
     let isInitialized = false;
     
