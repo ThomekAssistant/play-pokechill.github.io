@@ -1,5 +1,5 @@
 // Play.fun SDK Integration for Pokechill
-// Simple setup - adds points for in-game actions
+// Simple setup - adds points for gameplay
 
 (function() {
     'use strict';
@@ -8,17 +8,58 @@
     const GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
     let playFun = null;
     let isInitialized = false;
+    let initAttempts = 0;
+    const MAX_ATTEMPTS = 30; // 30 seconds max
+    
+    // Wait for external SDK script to load
+    function waitForSDK() {
+        return new Promise((resolve) => {
+            const checkSDK = () => {
+                initAttempts++;
+                
+                // Check for different possible global names
+                if (typeof window.PlayFunSDK !== 'undefined') {
+                    console.log('[Play.fun] SDK found (PlayFunSDK)');
+                    resolve(window.PlayFunSDK);
+                    return;
+                }
+                if (typeof window.PlayFun !== 'undefined') {
+                    console.log('[Play.fun] SDK found (PlayFun)');
+                    resolve(window.PlayFun);
+                    return;
+                }
+                if (typeof window.Playdotfun !== 'undefined') {
+                    console.log('[Play.fun] SDK found (Playdotfun)');
+                    resolve(window.Playdotfun);
+                    return;
+                }
+                
+                if (initAttempts >= MAX_ATTEMPTS) {
+                    console.error('[Play.fun] SDK failed to load after 30 seconds');
+                    resolve(null);
+                    return;
+                }
+                
+                console.log('[Play.fun] Waiting for SDK... (' + initAttempts + '/' + MAX_ATTEMPTS + ')');
+                setTimeout(checkSDK, 1000);
+            };
+            
+            // Start checking
+            checkSDK();
+        });
+    }
     
     // Initialize Play.fun SDK
     async function initPlayFun() {
         try {
-            if (typeof PlayFunSDK === 'undefined') {
-                console.log('[Play.fun] SDK not loaded yet, retrying in 1s...');
-                setTimeout(initPlayFun, 1000);
+            const SDK = await waitForSDK();
+            
+            if (!SDK) {
+                console.error('[Play.fun] SDK not available');
                 return;
             }
             
-            playFun = new PlayFunSDK({
+            playFun = new SDK({
                 gameId: GAME_ID,
                 ui: { 
                     usePointsWidget: true,
@@ -30,9 +71,10 @@
             isInitialized = true;
             
             console.log('[Play.fun] SDK initialized successfully!');
-            
-            // Show welcome notification
             showNotification('🎮 Play.fun connected! Earn points by playing!');
+            
+            // Setup game hooks after successful init
+            setupGameHooks();
             
         } catch (error) {
             console.error('[Play.fun] Initialization failed:', error);
@@ -40,19 +82,23 @@
     }
     
     // Add points wrapper
-    async function addPoints(amount, reason = '') {
+    async function addPoints(amount, reason) {
         if (!isInitialized || !playFun) {
-            console.log('[Play.fun] Not initialized, points not saved:', amount);
+            console.log('[Play.fun] Not initialized yet, cannot add points:', amount);
             return;
         }
         
         try {
-            playFun.addPoints(amount);
-            await playFun.savePoints();
+            if (typeof playFun.addPoints === 'function') {
+                playFun.addPoints(amount);
+            }
+            if (typeof playFun.savePoints === 'function') {
+                await playFun.savePoints();
+            }
             
             if (reason) {
-                console.log(`[Play.fun] +${amount} points - ${reason}`);
-                showNotification(`✨ +${amount} points! ${reason}`);
+                console.log('[Play.fun] +' + amount + ' points - ' + reason);
+                showNotification('✨ +' + amount + ' points! ' + reason);
             }
         } catch (error) {
             console.error('[Play.fun] Failed to add points:', error);
@@ -61,7 +107,6 @@
     
     // Notification helper
     function showNotification(message) {
-        // Create notification element
         const notif = document.createElement('div');
         notif.style.cssText = `
             position: fixed;
@@ -77,59 +122,49 @@
             animation: slideIn 0.3s ease;
         `;
         notif.textContent = message;
-        
         document.body.appendChild(notif);
         
-        // Remove after 3 seconds
         setTimeout(() => {
             notif.style.animation = 'slideOut 0.3s ease';
             setTimeout(() => notif.remove(), 300);
         }, 3000);
     }
     
-    // Hook into game events
+    // Hook into game events - only call if functions exist
     function setupGameHooks() {
+        console.log('[Play.fun] Setting up game hooks...');
+        
         // Hook for battle wins
-        const originalWinBattle = window.winBattle;
-        window.winBattle = function(...args) {
-            const result = originalWinBattle ? originalWinBattle.apply(this, args) : undefined;
-            addPoints(50, 'Battle won!');
-            return result;
-        };
+        if (typeof window.winBattle === 'function') {
+            const originalWinBattle = window.winBattle;
+            window.winBattle = function() {
+                const result = originalWinBattle.apply(this, arguments);
+                addPoints(50, 'Battle won!');
+                return result;
+            };
+        }
         
         // Hook for capturing Pokemon
-        const originalCatchPokemon = window.catchPokemon;
-        window.catchPokemon = function(...args) {
-            const result = originalCatchPokemon ? originalCatchPokemon.apply(this, args) : undefined;
-            if (result !== false) {
-                addPoints(100, 'Pokemon caught!');
-            }
-            return result;
-        };
+        if (typeof window.catchPokemon === 'function') {
+            const originalCatch = window.catchPokemon;
+            window.catchPokemon = function() {
+                const result = originalCatch.apply(this, arguments);
+                if (result !== false) {
+                    addPoints(100, 'Pokemon caught!');
+                }
+                return result;
+            };
+        }
         
         // Hook for leveling up
-        const originalLevelUp = window.levelUpPokemon;
-        window.levelUpPokemon = function(...args) {
-            const result = originalLevelUp ? originalLevelUp.apply(this, args) : undefined;
-            addPoints(25, 'Level up!');
-            return result;
-        };
-        
-        // Hook for completing areas/dungeons
-        const originalCompleteArea = window.completeArea;
-        window.completeArea = function(...args) {
-            const result = originalCompleteArea ? originalCompleteArea.apply(this, args) : undefined;
-            addPoints(200, 'Area completed!');
-            return result;
-        };
-        
-        // Hook for evolving Pokemon
-        const originalEvolve = window.evolvePokemon;
-        window.evolvePokemon = function(...args) {
-            const result = originalEvolve ? originalEvolve.apply(this, args) : undefined;
-            addPoints(150, 'Pokemon evolved!');
-            return result;
-        };
+        if (typeof window.levelUpPokemon === 'function') {
+            const originalLevelUp = window.levelUpPokemon;
+            window.levelUpPokemon = function() {
+                const result = originalLevelUp.apply(this, arguments);
+                addPoints(25, 'Level up!');
+                return result;
+            };
+        }
         
         console.log('[Play.fun] Game hooks installed');
     }
@@ -138,17 +173,6 @@
     window.givePlayFunPoints = function(amount) {
         addPoints(amount, 'Bonus points!');
     };
-    
-    // Initialize when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            initPlayFun();
-            setTimeout(setupGameHooks, 2000); // Wait for game to load
-        });
-    } else {
-        initPlayFun();
-        setTimeout(setupGameHooks, 2000);
-    }
     
     // Add CSS animations
     const style = document.createElement('style');
@@ -163,5 +187,12 @@
         }
     `;
     document.head.appendChild(style);
+    
+    // Start initialization
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPlayFun);
+    } else {
+        initPlayFun();
+    }
     
 })();
