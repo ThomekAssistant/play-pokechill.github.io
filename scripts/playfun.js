@@ -1,86 +1,57 @@
-// Play.fun SDK Integration for Pokechill
-// Auto-initializes using meta tag
-
+// Play.fun SDK Integration - Manual Init
 (function() {
     'use strict';
     
-    let playFun = null;
-    let isInitialized = false;
-    let checkInterval = null;
+    var GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
+    var sdk = null;
     
-    // Wait for Play.fun SDK to be ready
     function init() {
-        console.log('[Play.fun] Waiting for SDK...');
+        console.log('[Play.fun] Starting manual init...');
         
-        checkInterval = setInterval(function() {
-            // Check if Play.fun SDK loaded and initialized itself
-            if (typeof window.playFun !== 'undefined' && window.playFun) {
-                clearInterval(checkInterval);
-                playFun = window.playFun;
-                isInitialized = true;
-                console.log('[Play.fun] SDK ready!');
-                showNotification('🎮 Play.fun connected!');
-                setupHooks();
-            }
-            // Or check for PlayFunSDK global
-            else if (typeof window.PlayFunSDK !== 'undefined') {
-                clearInterval(checkInterval);
-                // SDK loaded but not initialized - meta tag will handle it
-                console.log('[Play.fun] SDK found, waiting for auto-init...');
-                setTimeout(function() {
-                    if (typeof window.playFun !== 'undefined') {
-                        playFun = window.playFun;
-                        isInitialized = true;
-                        console.log('[Play.fun] Auto-initialized!');
-                        showNotification('🎮 Play.fun connected!');
-                        setupHooks();
-                    }
-                }, 2000);
-            }
-        }, 500);
-        
-        // Stop checking after 30 seconds
-        setTimeout(function() {
-            if (!isInitialized) {
-                clearInterval(checkInterval);
-                console.log('[Play.fun] SDK not detected');
-            }
-        }, 30000);
-    }
-    
-    // Add points
-    function addPoints(amount, reason) {
-        if (!isInitialized || !playFun) return;
+        // Check if SDK script loaded
+        if (typeof window.PlayFunSDK === 'undefined') {
+            console.log('[Play.fun] SDK script not loaded yet, retrying...');
+            setTimeout(init, 1000);
+            return;
+        }
         
         try {
-            if (typeof playFun.addPoints === 'function') {
-                playFun.addPoints(amount);
-            }
-            if (typeof playFun.savePoints === 'function') {
-                playFun.savePoints();
-            }
-            if (reason) {
-                console.log('[Play.fun] +' + amount + ' points: ' + reason);
-            }
+            // Manual initialization
+            sdk = new window.PlayFunSDK({
+                gameId: GAME_ID,
+                ui: {
+                    usePointsWidget: true,
+                    position: 'bottom-right'
+                }
+            });
+            
+            sdk.init().then(function() {
+                console.log('[Play.fun] SDK initialized!');
+                window.playFun = sdk; // Make it global
+                setupHooks();
+            }).catch(function(err) {
+                console.error('[Play.fun] Init error:', err);
+            });
+            
         } catch (e) {
-            console.error('[Play.fun] Error:', e);
+            console.error('[Play.fun] Failed to create SDK:', e);
         }
     }
     
-    // Notification
-    function showNotification(msg) {
-        var div = document.createElement('div');
-        div.style.cssText = 'position:fixed;top:20px;right:20px;background:#D4A853;color:#1A1A1A;padding:15px 20px;border-radius:10px;font-weight:600;z-index:10000;box-shadow:0 4px 15px rgba(0,0,0,0.3);';
-        div.textContent = msg;
-        document.body.appendChild(div);
-        setTimeout(function() { div.remove(); }, 3000);
+    function addPoints(amount, reason) {
+        if (!sdk) return;
+        try {
+            sdk.addPoints(amount);
+            sdk.savePoints();
+            console.log('[Play.fun] +' + amount + ' points: ' + reason);
+        } catch (e) {
+            console.error('[Play.fun] Error adding points:', e);
+        }
     }
     
-    // Hook game functions
     function setupHooks() {
-        console.log('[Play.fun] Installing hooks...');
+        console.log('[Play.fun] Setting up hooks...');
         
-        // Try to hook various game functions
         if (typeof window.winBattle === 'function') {
             var orig = window.winBattle;
             window.winBattle = function() {
@@ -90,9 +61,9 @@
         }
         
         if (typeof window.catchPokemon === 'function') {
-            var orig2 = window.catchPokemon;
+            var orig = window.catchPokemon;
             window.catchPokemon = function() {
-                var result = orig2.apply(this, arguments);
+                var result = orig.apply(this, arguments);
                 if (result !== false) addPoints(100, 'Pokemon caught!');
                 return result;
             };
@@ -100,10 +71,6 @@
     }
     
     // Start
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
+    setTimeout(init, 1000);
     
 })();
