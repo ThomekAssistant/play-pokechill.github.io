@@ -1,22 +1,22 @@
-// Play.fun SDK Integration - Manual Init
+// Play.fun SDK Integration - Points every 10 seconds
 (function() {
     'use strict';
     
     var GAME_ID = '7b292365-07da-45d3-805c-75c2ce5d117e';
     var sdk = null;
+    var pointsInterval = null;
+    var totalPoints = 0;
     
     function init() {
-        console.log('[Play.fun] Starting manual init...');
+        console.log('[Play.fun] Starting initialization...');
         
-        // Check if SDK script loaded
         if (typeof window.PlayFunSDK === 'undefined') {
-            console.log('[Play.fun] SDK script not loaded yet, retrying...');
+            console.log('[Play.fun] SDK not loaded yet, retrying in 1s...');
             setTimeout(init, 1000);
             return;
         }
         
         try {
-            // Manual initialization
             sdk = new window.PlayFunSDK({
                 gameId: GAME_ID,
                 ui: {
@@ -26,49 +26,56 @@
             });
             
             sdk.init().then(function() {
-                console.log('[Play.fun] SDK initialized!');
-                window.playFun = sdk; // Make it global
-                setupHooks();
+                console.log('[Play.fun] ✓ SDK initialized successfully!');
+                window.playFun = sdk;
+                startPointsTimer();
             }).catch(function(err) {
-                console.error('[Play.fun] Init error:', err);
+                console.error('[Play.fun] ✗ Init error:', err);
             });
             
         } catch (e) {
-            console.error('[Play.fun] Failed to create SDK:', e);
+            console.error('[Play.fun] ✗ Failed to create SDK:', e);
         }
     }
     
-    function addPoints(amount, reason) {
-        if (!sdk) return;
+    function startPointsTimer() {
+        console.log('[Play.fun] Starting 10-second points timer...');
+        
+        // Give points immediately on start
+        givePoints();
+        
+        // Then every 10 seconds
+        pointsInterval = setInterval(givePoints, 10000);
+    }
+    
+    function givePoints() {
+        if (!sdk) {
+            console.log('[Play.fun] SDK not ready, skipping points');
+            return;
+        }
+        
         try {
-            sdk.addPoints(amount);
+            var points = 10; // Points to give every 10 seconds
+            sdk.addPoints(points);
             sdk.savePoints();
-            console.log('[Play.fun] +' + amount + ' points: ' + reason);
+            
+            totalPoints += points;
+            var timestamp = new Date().toLocaleTimeString();
+            
+            console.log('[Play.fun] [' + timestamp + '] +' + points + ' points given (Total: ' + totalPoints + ')');
+            
         } catch (e) {
-            console.error('[Play.fun] Error adding points:', e);
+            console.error('[Play.fun] Error giving points:', e);
         }
     }
     
-    function setupHooks() {
-        console.log('[Play.fun] Setting up hooks...');
-        
-        if (typeof window.winBattle === 'function') {
-            var orig = window.winBattle;
-            window.winBattle = function() {
-                addPoints(50, 'Battle won!');
-                return orig.apply(this, arguments);
-            };
+    // Stop timer function (for debugging)
+    window.stopPlayFunPoints = function() {
+        if (pointsInterval) {
+            clearInterval(pointsInterval);
+            console.log('[Play.fun] Points timer stopped. Total given: ' + totalPoints);
         }
-        
-        if (typeof window.catchPokemon === 'function') {
-            var orig = window.catchPokemon;
-            window.catchPokemon = function() {
-                var result = orig.apply(this, arguments);
-                if (result !== false) addPoints(100, 'Pokemon caught!');
-                return result;
-            };
-        }
-    }
+    };
     
     // Start
     setTimeout(init, 1000);
