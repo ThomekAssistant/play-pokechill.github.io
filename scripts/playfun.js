@@ -1,107 +1,113 @@
-// Play.fun SDK Integration - Force load check
+// Play.fun SDK - Wait for auto-initialization
 (function() {
     'use strict';
     
-    console.log('[Play.fun] Script loaded at:', new Date().toISOString());
-    console.log('[Play.fun] Document readyState:', document.readyState);
+    console.log('[Play.fun] Starting monitor...');
     
-    // Check if sdk.play.fun script element exists
-    var scripts = document.querySelectorAll('script');
-    var foundSdk = false;
-    scripts.forEach(function(s) {
-        if (s.src && s.src.includes('sdk.play.fun')) {
-            console.log('[Play.fun] SDK script element found:', s.src);
-            console.log('[Play.fun] Script loaded?', s.readyState || 'unknown');
-            foundSdk = true;
-        }
-    });
+    var checkCount = 0;
+    var maxChecks = 30;
     
-    if (!foundSdk) {
-        console.error('[Play.fun] SDK script element NOT FOUND in DOM!');
-    }
-    
-    // Wait longer and check multiple times
-    var attempts = 0;
-    var maxAttempts = 20;
-    
-    function checkAndInit() {
-        attempts++;
-        console.log('[Play.fun] Check attempt', attempts + '/' + maxAttempts);
+    function monitor() {
+        checkCount++;
         
-        // Try all possible variations
-        var checks = {
-            'PlayFunSDK': typeof window.PlayFunSDK,
-            'PlayFun': typeof window.PlayFun,
-            'playFun': typeof window.playFun,
-            'Playdotfun': typeof window.Playdotfun,
-            'playdotfun': typeof window.playdotfun,
-            'OGP': typeof window.OGP,
-            'ogp': typeof window.ogp
-        };
-        
-        console.log('[Play.fun] Types found:', JSON.stringify(checks));
-        
-        // If any is not undefined, we found something
-        var found = null;
-        for (var key in checks) {
-            if (checks[key] !== 'undefined') {
-                console.log('[Play.fun] ✓ Found', key, ':', checks[key]);
-                found = { name: key, type: checks[key], obj: window[key] };
-                break;
+        // Check for widget iframe
+        var iframes = document.querySelectorAll('iframe');
+        var playFunFrame = null;
+        iframes.forEach(function(f) {
+            if (f.src && f.src.includes('play.fun')) {
+                playFunFrame = f;
             }
+        });
+        
+        // Check for any new global
+        var globals = Object.keys(window).filter(function(k) {
+            return k.toLowerCase().includes('play') || 
+                   k.toLowerCase().includes('fun') || 
+                   k.toLowerCase().includes('ogp');
+        });
+        
+        // Check for widget container
+        var widget = document.querySelector('[id*="play"], [class*="play"]');
+        
+        console.log('[Play.fun] Check #' + checkCount);
+        console.log('  - Play.fun iframe:', playFunFrame ? 'FOUND' : 'not found');
+        console.log('  - Play-related globals:', globals.length > 0 ? globals.slice(0, 5) : 'none');
+        console.log('  - Widget element:', widget ? widget.tagName + '#' + widget.id : 'not found');
+        
+        // Try to find any Play.fun related object
+        if (window.PlayFunSDK) {
+            console.log('[Play.fun] ✓ PlayFunSDK found!');
+            tryInit(window.PlayFunSDK);
+            return;
         }
         
-        if (found) {
-            console.log('[Play.fun] Attempting init with', found.name);
-            tryInit(found);
-        } else if (attempts < maxAttempts) {
-            console.log('[Play.fun] Nothing found, retrying in 2s...');
-            setTimeout(checkAndInit, 2000);
+        if (window.__PLAYFUN__ || window.playFun) {
+            console.log('[Play.fun] ✓ PlayFun instance found!');
+            startEarning(window.playFun || window.__PLAYFUN__);
+            return;
+        }
+        
+        if (checkCount < maxChecks) {
+            setTimeout(monitor, 1000);
         } else {
-            console.error('[Play.fun] SDK never loaded after', maxAttempts, 'attempts');
-            console.log('[Play.fun] All window keys containing play/fun:', 
-                Object.keys(window).filter(function(k) {
-                    return k.toLowerCase().includes('play') || k.toLowerCase().includes('fun');
-                }).slice(0, 20)
-            );
+            console.log('[Play.fun] Max checks reached. SDK may use different integration method.');
+            // Try alternative: maybe SDK exposes through event
+            tryAlternativeIntegration();
         }
     }
     
-    function tryInit(sdkInfo) {
+    function tryInit(SDK) {
         try {
-            var SDK = sdkInfo.obj;
-            var instance;
+            var instance = new SDK({
+                gameId: '7b292365-07da-45d3-805c-75c2ce5d117e'
+            });
             
-            if (sdkInfo.type === 'function') {
-                instance = new SDK({
-                    gameId: '7b292365-07da-45d3-805c-75c2ce5d117e',
-                    ui: { usePointsWidget: true }
-                });
-            } else {
-                instance = SDK;
-            }
-            
-            console.log('[Play.fun] Instance created:', instance);
-            
-            if (instance && typeof instance.init === 'function') {
+            if (instance.init) {
                 instance.init().then(function() {
-                    console.log('[Play.fun] ✓✓✓ SUCCESS! SDK initialized');
+                    console.log('[Play.fun] ✓ Initialized!');
                     startEarning(instance);
                 }).catch(function(e) {
-                    console.error('[Play.fun] Init promise rejected:', e);
+                    console.error('[Play.fun] Init failed:', e);
                 });
             } else {
-                console.log('[Play.fun] No init method, assuming auto-initialized');
                 startEarning(instance);
             }
         } catch (e) {
-            console.error('[Play.fun] Init error:', e);
+            console.error('[Play.fun] Error:', e);
+        }
+    }
+    
+    function tryAlternativeIntegration() {
+        console.log('[Play.fun] Trying alternative methods...');
+        
+        // Method 1: Try to use the meta tag directly
+        var meta = document.querySelector('meta[name="x-ogp-key"]');
+        if (meta) {
+            console.log('[Play.fun] Meta tag found:', meta.content);
+        }
+        
+        // Method 2: Check if SDK already created any UI
+        var potentialWidgets = document.querySelectorAll('div, iframe');
+        var found = false;
+        potentialWidgets.forEach(function(el) {
+            var html = el.outerHTML.toLowerCase();
+            if (html.includes('play') || html.includes('point') || html.includes('ogp')) {
+                if (!found) {
+                    console.log('[Play.fun] Potential widget found:', el.tagName);
+                    found = true;
+                }
+            }
+        });
+        
+        if (!found) {
+            console.log('[Play.fun] No SDK integration detected. The SDK may need to be configured differently.');
+            console.log('[Play.fun] Please check Play.fun documentation for integration method.');
         }
     }
     
     function startEarning(sdk) {
+        console.log('[Play.fun] Starting earnings...');
         var total = 0;
-        console.log('[Play.fun] Starting 10s timer...');
         setInterval(function() {
             try {
                 if (sdk.addPoints) {
@@ -116,7 +122,7 @@
         }, 10000);
     }
     
-    // Start checking
-    setTimeout(checkAndInit, 1000);
+    // Start monitoring
+    setTimeout(monitor, 1000);
     
 })();
